@@ -1,0 +1,92 @@
+---
+title: "M5_Forecasting_data"
+author: "Krishna Teja"
+date: "14/03/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Install the packages
+
+```{r library_read,echo=FALSE}
+.packages = c("dplyr", 
+              "ggplot2", 
+              "fpp2",
+              "stringr", 
+              "forecast", 
+              "data.table", 
+              "rmarkdown", 
+              "lubridate", 
+              "ggrepel", 
+              "caret")
+
+# install uninstalled CRAN packages
+.inst <- .packages %in% installed.packages()
+if(length(.packages[!.inst]) > 0) install.packages(.packages[!.inst])
+# load packages into session
+lapply(.packages, require, character.only = TRUE)
+# number format is non scientifical
+options(scipen = 999)
+```
+
+## Read the data
+
+```{r data_read, echo=FALSE}
+sales_train_val <- read.csv("./sales_train_validation.csv",stringsAsFactors = F,header = T) %>%  
+  reshape2::melt(id.vars = c("id","item_id","dept_id","cat_id","store_id","state_id")) %>% 
+  mutate(variable = as.character(variable)) %>% 
+  rename("d" = "variable")
+calender <- read.csv("./calendar.csv",stringsAsFactors = F,header = T)
+sell_prices <- read.csv("./sell_prices.csv",stringsAsFactors = F,header = T)
+
+productC %>% croston() %>% autoplot()
+length(unique(sales_train_val$item_id))
+```
+## plot a sample data 
+
+```{r plot_data, echo=FALSE}
+sample_data <- sales_train_val %>% 
+  filter(id == 'HOBBIES_1_001_CA_3_validation') %>% 
+  left_join(calender,by = c("d" = "d"))%>% 
+  mutate(date = as.Date(date),
+         snap = if_else(state_id == 'CA',snap_CA,
+                   if_else(state_id == 'TX',snap_TX,
+                      if_else(state_id == 'WI',snap_WI,as.integer(0)))),
+         value_lead = lead(value,1),
+         difference = (value_lead-value)/value
+         ) 
+# %>% select(date,value,value_lead,difference)
+
+sample_data%>% 
+  ggplot(aes(x = date, y = difference))+
+  # geom_line()+
+  geom_point()
+```
+
+```{r sample_pred, echo=FALSE}
+library(prophet)
+
+df <- sample_data %>% select(date,difference)  %>% rename("ds" = "date",
+                                                     "y" = "difference") 
+# Create a prophet object
+m <- prophet(df,daily.seasonality = TRUE,n.changepoints = 50) 
+
+# Extend dataframe 100 days into the future
+future <- make_future_dataframe(m, periods = 28,freq = 'day')
+
+# Generate forecast for next 100 days
+forecast <- predict(m, future)
+
+plot(m, forecast)
+
+history <- data.frame(ds = seq(as.Date('2015-01-01'), as.Date('2016-01-01'), by = 'd'),
+                      y = sin(1:366/200) + rnorm(366)/10)
+m <- prophet(history)
+future <- make_future_dataframe(m, periods = 365)
+forecast <- predict(m, future)
+plot(m, forecast)
+
+```
